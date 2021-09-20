@@ -10,8 +10,7 @@ import (
 	"github.com/google/go-github/v39/github"
 )
 
-// Request specifies the parameters required for commit comparison requests against
-// GitHub, as well as any additional formatting/output control settings
+// Request specifies required parameters for commit comparison requests against GitHub
 type Request struct {
 	owner string
 	repo  string
@@ -19,7 +18,11 @@ type Request struct {
 	base  string
 	user  string
 	pass  string
-	short bool
+}
+
+// control specifies optional output control parameters for end users
+type control struct {
+	json bool
 }
 
 // CommitMessage specifies the message content, author, and associated git commit
@@ -32,14 +35,13 @@ type CommitMessage struct {
 
 // GetCommitMessages calls the GitHub API for comparison of commits between specified BASE and HEAD
 // It returns commit messages, SHAs, and author info as a byte slice
-func GetCommitMessages(r *Request) (string, error) {
-	//func GetCommitMessages(c *Comparison) ([]byte, error) {
+func GetCommitMessages(req *Request) ([]CommitMessage, []byte, error) {
 
 	ctx := context.Background()
 
 	tp := github.BasicAuthTransport{
-		Username: r.user,
-		Password: r.pass,
+		Username: req.user,
+		Password: req.pass,
 	}
 
 	client := github.NewClient(tp.Client())
@@ -47,10 +49,10 @@ func GetCommitMessages(r *Request) (string, error) {
 	var res []CommitMessage
 
 	for page, numCommits, firstRun := 1, 1, true; numCommits > 0; page++ {
-		options := &github.ListOptions{page, 100}
-		c, _, err := client.Repositories.CompareCommits(ctx, r.owner, r.repo, r.base, r.head, options)
+		options := &github.ListOptions{Page: page, PerPage: 100}
+		c, _, err := client.Repositories.CompareCommits(ctx, req.owner, req.repo, req.base, req.head, options)
 		if err != nil {
-			return "Error", err
+			return nil, nil, err
 		}
 
 		for i, l := 0, len(c.Commits); i < l-1; i++ {
@@ -58,7 +60,7 @@ func GetCommitMessages(r *Request) (string, error) {
 
 			m := CommitMessage{
 				Author:    currentCommit.Author,
-				CommitSHA: currentCommit.SHA,
+				CommitSHA: currentCommit.Tree.SHA,
 				Message:   currentCommit.Message,
 			}
 
@@ -74,33 +76,62 @@ func GetCommitMessages(r *Request) (string, error) {
 		numCommits = numCommits - 100
 	}
 
-	if r.short {
-		fmt.Println("Short input was requested")
-	}
-
 	resJSON, err := json.MarshalIndent(res, "", " ")
 	if err != nil {
-		return "Error", err
+		return nil, nil, err
 	}
 
-	return string(resJSON), nil
+	return res, resJSON, nil
+}
+
+func printCommitMessages(ctl *control, c []CommitMessage, m []byte) error {
+
+	var res []string
+
+	if ctl.json == true {
+		fmt.Println(string(m))
+		return nil
+	}
+
+	for i := range c {
+		formatted := fmt.Sprintf(
+			"Date: %s\n"+
+				"  Commit: %s \n"+
+				"  Author: %s (%s)\n"+
+				"  Message: %s\n\n",
+			*c[i].Author.Date,
+			*c[i].CommitSHA,
+			*c[i].Author.Name,
+			*c[i].Author.Email,
+			*c[i].Message)
+
+		res = append(res, formatted)
+	}
+
+	fmt.Println(res)
+
+	return nil
 }
 
 func main() {
-	c := new(Request)
-	flag.StringVar(&c.owner, "owner", "", "Name of the user or organization the repo belongs to")
-	flag.StringVar(&c.repo, "repo", "", "Name of the repo to compare commits from")
-	flag.StringVar(&c.head, "head", "", "Git commit SHA, branch, or tag of commit to use as HEAD in the comparison")
-	flag.StringVar(&c.base, "base", "", "Git commit SHA, branch, or tag of commit to use as BASE in the comparison")
-	flag.StringVar(&c.user, "user", "", "User to authenticate as in GitHub")
-	flag.StringVar(&c.pass, "pass", "", "Password or Personal Access Token to use for authentication in GitHub")
-	flag.BoolVar(&c.short, "short", false, "Minimal output with messages only (omit author and commit info)")
+	r := new(Request)
+	c := new(control)
+	flag.StringVar(&r.owner, "owner", "", "Name of the user or organization the repo belongs to")
+	flag.StringVar(&r.repo, "repo", "", "Name of the repo to compare commits from")
+	flag.StringVar(&r.head, "head", "", "Git commit SHA, branch, or tag of commit to use as HEAD in the comparison")
+	flag.StringVar(&r.base, "base", "", "Git commit SHA, branch, or tag of commit to use as BASE in the comparison")
+	flag.StringVar(&r.user, "user", "", "User to authenticate as in GitHub")
+	flag.StringVar(&r.pass, "pass", "", "Password or Personal Access Token to use for authentication in GitHub")
+	flag.BoolVar(&c.json, "json", false, "Output content in JSON format")
 	flag.Parse()
 
-	res, err := GetCommitMessages(c)
+	res, resJSON, err := GetCommitMessages(r)
 	if err != nil {
 		log.Panicln(err)
 	}
 
-	fmt.Println(res)
+	err = printCommitMessages(c, res, resJSON)
+	if err != nil {
+		log.Panicln(err)
+	}
 }

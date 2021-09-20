@@ -17,3 +17,6 @@
 
 # Local environment configurations with direnv (https://direnv.net/)
 .envrc
+
+# In-progress files
+*.swp
