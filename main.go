@@ -63,7 +63,7 @@ func GetCommitMessages(client *GithubClient) ([]CommitMessage, error) {
 
 	var res []CommitMessage
 
-	for page, numCommits, firstRun := 1, 1, true; numCommits < 0; page++ {
+	for page, numCommits, firstRun := 1, 1, true; numCommits > 0; page++ {
 		options := &github.ListOptions{Page: page, PerPage: 100}
 		c, _, err := client.service.CompareCommits(ctx, client.config.owner, client.config.repo, client.config.base, client.config.head, options)
 		if err != nil {
